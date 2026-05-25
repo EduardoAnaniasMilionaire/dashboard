@@ -175,6 +175,7 @@ select option{background:var(--surface);}
 .disc-badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:4px;font-size:9px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
 .badge-active{background:rgba(109,40,217,.1);color:var(--lav);border:1px solid rgba(109,40,217,.2);}
 .badge-done{background:rgba(34,197,94,.08);color:var(--green);border:1px solid rgba(34,197,94,.18);}
+.badge-fail{background:rgba(220,38,38,.08);color:var(--red);border:1px solid rgba(220,38,38,.18);}
 
 /* JOURNAL ENTRY */
 .jentry{background:var(--raised);border:1px solid var(--line);border-radius:9px;padding:14px;margin-bottom:9px;}
@@ -389,7 +390,7 @@ select option{background:var(--surface);}
 
   <div class="g2 mb">
     <div class="card"><div class="sec-title">Cursando</div><div id="ac-active"></div></div>
-    <div class="card"><div class="sec-title">Concluídas</div><div id="ac-done"></div></div>
+    <div class="card"><div class="sec-title">Concluídas / Histórico</div><div id="ac-done"></div></div>
   </div>
 </div>
 
@@ -433,7 +434,7 @@ select option{background:var(--surface);}
   <div class="modal"><div class="modal-title">Registrar Dia</div>
     <div class="field"><label>Conquistas</label><textarea id="log-w" placeholder="Toda vitória conta..."></textarea></div>
     <div class="field"><label>Melhorar amanhã</label><textarea id="log-i" placeholder="Seja honesto..."></textarea></div>
-    <div class="field"><label>Gratidão</label><input id="log-g" type="text" placeholder="Sou grato por..."></textarea></div>
+    <div class="field"><label>Gratidão</label><input id="log-g" type="text" placeholder="Sou grato por..."></div>
     <div class="ma"><button class="btn bg" onclick="close_('modal-log')">Cancelar</button><button class="btn bp" onclick="saveLog()">Salvar</button></div>
   </div>
 </div>
@@ -497,10 +498,13 @@ select option{background:var(--surface);}
   <div class="modal"><div class="modal-title">Disciplina / Nota</div>
     <div class="field"><label>Disciplina</label><input id="gr-d" type="text" placeholder="Ex: Cálculo I"></div>
     <div class="field"><label>Status</label>
-      <select id="gr-status"><option value="active">Cursando</option><option value="done">Concluída</option></select>
+      <select id="gr-status"><option value="active">Cursando</option><option value="approved">Aprovado</option><option value="failed">Reprovado</option><option value="done">Concluída</option></select>
     </div>
     <div class="field"><label>Semestre</label><input id="gr-sem" type="text" placeholder="Ex: 2026.1"></div>
-    <div class="field"><label>Nota (opcional)</label><input id="gr-v" type="number" step="0.1" min="0" max="10" placeholder="8.5"></div>
+    <div class="g2">
+      <div class="field"><label>Sua nota (opcional)</label><input id="gr-v" type="number" step="0.1" min="0" placeholder="8.5"></div>
+      <div class="field"><label>Valor total</label><input id="gr-max" type="number" step="0.1" min="0" placeholder="10.0"></div>
+    </div>
     <div class="field"><label>Tipo</label>
       <select id="gr-t"><option>Prova 1</option><option>Prova 2</option><option>Prova Final</option><option>Trabalho</option><option>Nota Final</option></select>
     </div>
@@ -871,34 +875,56 @@ function getDiscs(){return S.get('discs')||[];}
 function renderAc(){
   const discs=getDiscs();
   const active=discs.filter(d=>d.status==='active');
-  const done=discs.filter(d=>d.status==='done');
+  const done=discs.filter(d=>d.status!=='active');
+  
   const allNotes=discs.flatMap(d=>d.grades||[]);
-  const avg=allNotes.length?allNotes.reduce((a,b)=>a+b.val,0)/allNotes.length:null;
+  let gSum=0, gMax=0;
+  allNotes.forEach(n => { gSum += n.val; gMax += (n.max || 10); });
+  const avg=allNotes.length ? (gSum/gMax)*10 : null;
+
   $('ac-avg').textContent=avg!==null?avg.toFixed(2):'—';
   $('ac-avgbar').style.width=avg!==null?Math.min(avg/8.5*100,100)+'%':'0%';
   $('ac-counts').textContent=`${active.length} / ${done.length}`;
+  
   function dH(d,idx){
     const notes=d.grades||[];
-    const dm=notes.length?notes.reduce((a,n)=>a+n.val,0)/notes.length:null;
+    let dSum=0, dMax=0;
+    notes.forEach(n => { dSum += n.val; dMax += (n.max || 10); });
+    const dm=notes.length ? (dSum/dMax)*10 : null;
+    
     const color=dm===null?'var(--dim)':dm>=8.5?'var(--green)':dm>=7?'var(--amber)':'var(--red)';
+    
+    let badgeClass = 'badge-done';
+    let badgeText = 'Concluída';
+    if(d.status === 'active') { badgeClass = 'badge-active'; badgeText = 'Cursando'; }
+    else if(d.status === 'approved') { badgeClass = 'badge-done'; badgeText = 'Aprovado'; }
+    else if(d.status === 'failed') { badgeClass = 'badge-fail'; badgeText = 'Reprovado'; }
+    
     return`<div style="padding:10px 0;border-bottom:1px solid var(--line);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
         <div><span style="font-size:12px;font-weight:600;">${d.name}</span>${d.sem?`<span class="mute" style="margin-left:5px;">${d.sem}</span>`:''}</div>
         <div style="display:flex;align-items:center;gap:7px;">
-          <span class="disc-badge ${d.status==='active'?'badge-active':'badge-done'}">${d.status==='active'?'Cursando':'Concluída'}</span>
+          <span class="disc-badge ${badgeClass}">${badgeText}</span>
           ${dm!==null?`<span style="font-family:'IBM Plex Mono',monospace;font-size:15px;color:${color};">${dm.toFixed(1)}</span>`:''}
           <button style="background:none;border:none;color:var(--mute);cursor:pointer;font-size:10px;" onclick="removeDisc(${idx})">✕</button>
         </div>
       </div>
       <div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
-        ${notes.map(n=>`<span class="npill ${n.val>=8.5?'nhi':n.val>=7?'nmd':'nlo'}">${n.type.slice(0,2)} ${n.val.toFixed(1)}</span>`).join('')}
+        ${notes.map(n=>{
+          const max = n.max || 10;
+          const ratio = (n.val / max) * 10;
+          const cClass = ratio>=8.5?'nhi':ratio>=7?'nmd':'nlo';
+          return `<span class="npill ${cClass}">${n.type.slice(0,2)} ${n.val.toFixed(1)}/${max.toFixed(1)}</span>`;
+        }).join('')}
         <button class="btn bg" style="font-size:9px;padding:1px 7px;margin-left:3px;" onclick="openAddNote(${idx})">+ Nota</button>
       </div>
     </div>`;
   }
+  
   $('ac-active').innerHTML=active.length?active.map(d=>dH(d,discs.indexOf(d))).join(''):'<div class="empty">Nenhuma.</div>';
   $('ac-done').innerHTML=done.length?done.map(d=>dH(d,discs.indexOf(d))).join(''):'<div class="empty">Nenhuma.</div>';
 }
+
 function saveGrade(){
   const name=$('gr-d').value.trim();if(!name)return;
   const discs=getDiscs();
@@ -906,11 +932,17 @@ function saveGrade(){
   const status=$('gr-status').value,sem=$('gr-sem').value.trim();
   if(idx===-1){discs.push({name,status,sem,grades:[]});idx=discs.length-1;}
   else{discs[idx].status=status;if(sem)discs[idx].sem=sem;}
+  
   const valStr=$('gr-v').value;const val=valStr!==''?parseFloat(valStr):null;
-  if(val!==null)discs[idx].grades.push({val,type:$('gr-t').value,date:today()});
-  S.set('discs',discs);close_('modal-grade');$('gr-d').value='';$('gr-v').value='';$('gr-sem').value='';
+  const maxStr=$('gr-max').value;const max=maxStr!==''?parseFloat(maxStr):10;
+  
+  if(val!==null)discs[idx].grades.push({val,max,type:$('gr-t').value,date:today()});
+  
+  S.set('discs',discs);close_('modal-grade');
+  $('gr-d').value='';$('gr-v').value='';$('gr-max').value='';$('gr-sem').value='';
   renderAc();toast('Salvo! 🎓');
 }
+
 function openAddNote(idx){const d=getDiscs()[idx];$('gr-d').value=d.name;$('gr-status').value=d.status;$('gr-sem').value=d.sem||'';open_('modal-grade');}
 function removeDisc(idx){const d=getDiscs();d.splice(idx,1);S.set('discs',d);renderAc();}
 
